@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrbitalSync - LEO Traffic Visualization</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: 'Segoe UI', Tahoma, sans-serif; 
+      background: #000; 
+      color: #fff; 
+      overflow: hidden;
+    }
+    #container { width: 100vw; height: 100vh; position: relative; }
+    #stats {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid #00ff88;
+      min-width: 200px;
+      z-index: 100;
+    }
+    #stats h2 { 
+      font-size: 18px; 
+      margin-bottom: 15px; 
+      color: #00ff88;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .stat-row { 
+      display: flex; 
+      justify-content: space-between; 
+      margin: 8px 0;
+      font-size: 14px;
+    }
+    .stat-label { color: #aaa; }
+    .stat-value { 
+      font-weight: bold; 
+      color: #fff;
+    }
+    .leo { color: #00ff88; }
+    .meo { color: #ffaa00; }
+    .geo { color: #ff3366; }
+    #legend {
+      position: absolute;
+      bottom: 80px;
+      left: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 15px;
+      border-radius: 10px;
+      border: 1px solid #444;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin: 5px 0;
+      font-size: 12px;
+    }
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    #speedControl {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 15px 20px;
+      border-radius: 10px;
+      border: 1px solid #00ff88;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    #speedControl label {
+      font-size: 12px;
+      color: #00ff88;
+      min-width: 100px;
+      font-weight: bold;
+    }
+    #speedSlider {
+      flex: 1;
+      height: 6px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #333;
+      outline: none;
+      border-radius: 3px;
+    }
+    #speedSlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      background: #00ff88;
+      cursor: pointer;
+      border-radius: 50%;
+    }
+    #speedSlider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      background: #00ff88;
+      cursor: pointer;
+      border-radius: 50%;
+      border: none;
+    }
+    #speedValue {
+      font-size: 14px;
+      color: #fff;
+      font-weight: bold;
+      min-width: 60px;
+      text-align: right;
+    }
+    #pauseBtn {
+      background: #ff3366;
+      color: #fff;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.3s;
+      min-width: 80px;
+    }
+    #pauseBtn:hover {
+      background: #ff5588;
+      transform: scale(1.05);
+    }
+    #pauseBtn.paused {
+      background: #00ff88;
+      color: #000;
+    }
+    #controls {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 15px;
+      border-radius: 10px;
+      border: 1px solid #444;
+    }
+    button {
+      background: #00ff88;
+      color: #000;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      margin: 5px;
+      transition: all 0.3s;
+    }
+    button:hover { background: #00dd77; transform: scale(1.05); }
+    button:active { transform: scale(0.95); }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      z-index: 200;
+    }
+    .spinner {
+      border: 4px solid #333;
+      border-top: 4px solid #00ff88;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    #tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.9);
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #00ff88;
+      font-size: 12px;
+      pointer-events: none;
+      display: none;
+      z-index: 300;
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Loading satellites from orbit...</p>
+  </div>
+
+  <div id="stats">
+    <h2>OrbitalSync</h2>
+    <div class="stat-row">
+      <span class="stat-label">Total Satellites:</span>
+      <span class="stat-value" id="total">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">LEO:</span>
+      <span class="stat-value leo" id="leo">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">MEO:</span>
+      <span class="stat-value meo" id="meo">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">GEO:</span>
+      <span class="stat-value geo" id="geo">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Time:</span>
+      <span class="stat-value" id="time">--:--:--</span>
+    </div>
+  </div>
+
+  <div id="legend">
+    <div class="legend-item">
+      <div class="legend-color" style="background: #00ff88;"></div>
+      <span>LEO (Low Earth Orbit)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #ffaa00;"></div>
+      <span>MEO (Medium Earth Orbit)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #ff3366;"></div>
+      <span>GEO (Geostationary)</span>
+    </div>
+  </div>
+
+  <div id="speedControl">
+    <button id="pauseBtn">Pause</button>
+    <label for="speedSlider">Time Speed:</label>
+    <input type="range" id="speedSlider" min="1" max="240" value="60" step="1">
+    <span id="speedValue">60x</span>
+  </div>
+
+  <div id="controls">
+    <button id="toggleOrbits">Show Orbit Trails</button>
+  </div>
+
+  <div id="tooltip"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/satellite.js@4.1.3/dist/satellite.min.js"></script>
+  <script>
+    const EARTH_RADIUS = 200;
+    const SCALE_FACTOR = EARTH_RADIUS / 6371;
+    
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 50000);
+    camera.position.set(500, 300, 500);
+    camera.lookAt(0, 0, 0);
+    
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 1);
+    document.getElementById('container').appendChild(renderer.domElement);
+    
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+    sunLight.position.set(5, 3, 5);
+    scene.add(sunLight);
+    
+    const earthGeometry = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
+    const textureLoader = new THREE.TextureLoader();
+    const earthMaterial = new THREE.MeshPhongMaterial({
+      map: textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg'),
+      shininess: 5
+    });
+    const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+    scene.add(earth);
+    
+    const atmosphereGeometry = new THREE.SphereGeometry(EARTH_RADIUS * 1.015, 64, 64);
+    const atmosphereMaterial = new THREE.MeshBasicMaterial({
+      color: 0x6699ff,
+      transparent: true,
+      opacity: 0.1,
+      side: THREE.BackSide
+    });
+    const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+    scene.add(atmosphere);
+    
+    scene.background = new THREE.Color(0x000000);
+    
+    const satellites = [];
+    const orbitTrails = [];
+    let showOrbits = false;
+    let isPaused = false;
+    
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+    
+    renderer.domElement.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    });
+    
+    renderer.domElement.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        const deltaX = e.clientX - previousMousePosition.x;
+        const deltaY = e.clientY - previousMousePosition.y;
+        
+        const rotationSpeed = 0.005;
+        
+        const angle = deltaX * rotationSpeed;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const x = camera.position.x * cos - camera.position.z * sin;
+        const z = camera.position.x * sin + camera.position.z * cos;
+        camera.position.x = x;
+        camera.position.z = z;
+        
+        const vAngle = deltaY * rotationSpeed;
+        const r = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
+        const currentAngle = Math.atan2(camera.position.y, r);
+        const newAngle = currentAngle + vAngle;
+        
+        const clampedAngle = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, newAngle));
+        const distance = camera.position.length();
+        
+        camera.position.y = distance * Math.sin(clampedAngle);
+        const newR = distance * Math.cos(clampedAngle);
+        const ratio = newR / r;
+        camera.position.x *= ratio;
+        camera.position.z *= ratio;
+        
+        camera.lookAt(0, 0, 0);
+        previousMousePosition = { x: e.clientX, y: e.clientY };
+      }
+      
+      const mouse = new THREE.Vector2(
+        (e.clientX / window.innerWidth) * 2 - 1,
+        -(e.clientY / window.innerHeight) * 2 + 1
+      );
+      
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+      
+      const intersects = raycaster.intersectObjects(satellites.map(s => s.mesh));
+      const tooltip = document.getElementById('tooltip');
+      
+      if (intersects.length > 0) {
+        const sat = satellites.find(s => s.mesh === intersects[0].object);
+        tooltip.style.display = 'block';
+        tooltip.style.left = e.clientX + 10 + 'px';
+        tooltip.style.top = e.clientY + 10 + 'px';
+        tooltip.innerHTML = `
+          <strong>${sat.name}</strong><br>
+          Orbit: ${sat.orbit_type}<br>
+          Alt: ${Math.round(sat.altitude)} km
+        `;
+      } else {
+        tooltip.style.display = 'none';
+      }
+    });
+    
+    renderer.domElement.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+    
+    renderer.domElement.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const direction = new THREE.Vector3();
+      camera.getWorldDirection(direction);
+      
+      if (e.deltaY > 0) {
+        camera.position.addScaledVector(direction, -50);
+      } else {
+        camera.position.addScaledVector(direction, 50);
+      }
+      
+      const distance = camera.position.length();
+      if (distance < 300) {
+        camera.position.setLength(300);
+      } else if (distance > 3000) {
+        camera.position.setLength(3000);
+      }
+    });
+    
+    function latLonAltToVector3(lat, lon, alt) {
+      const r = EARTH_RADIUS + (alt * SCALE_FACTOR);
+      const phi = (90 - lat) * Math.PI / 180;
+      const theta = (lon + 180) * Math.PI / 180;
+      
+      const x = r * Math.sin(phi) * Math.cos(theta);
+      const y = r * Math.cos(phi);
+      const z = r * Math.sin(phi) * Math.sin(theta);
+      
+      return new THREE.Vector3(x, y, z);
+    }
+    
+    function createSatellite(data) {
+      const satrec = satellite.twoline2satrec(data.tle1, data.tle2);
+      const color = new THREE.Color(data.color);
+      
+      const geometry = new THREE.SphereGeometry(6, 8, 8);
+      const material = new THREE.MeshBasicMaterial({ color });
+      const mesh = new THREE.Mesh(geometry, material);
+      
+      scene.add(mesh);
+      
+      return {
+        name: data.name,
+        satrec,
+        mesh,
+        color: data.color,
+        orbit_type: data.orbit_type,
+        altitude: 0
+      };
+    }
+    
+    function createOrbitTrail(satrec, color, points = 90) {
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(points * 3);
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      
+      const material = new THREE.LineBasicMaterial({ 
+        color: new THREE.Color(color),
+        opacity: 0.8,
+        transparent: true,
+        linewidth: 3
+      });
+      
+      const line = new THREE.Line(geometry, material);
+      line.visible = showOrbits;
+      scene.add(line);
+      
+      const updateTrail = (currentTime) => {
+        const posArray = line.geometry.attributes.position.array;
+        
+        for (let i = 0; i < points; i++) {
+          const time = new Date(currentTime.getTime() - ((points - i) * 30000)); // Trail behind satellite
+          const positionAndVelocity = satellite.propagate(satrec, time);
+          
+          if (positionAndVelocity.position) {
+            const gmst = satellite.gstime(time);
+            const geodeticCoords = satellite.eciToGeodetic(positionAndVelocity.position, gmst);
+            
+            const lat = satellite.degreesLat(geodeticCoords.latitude);
+            const lon = satellite.degreesLong(geodeticCoords.longitude);
+            const alt = geodeticCoords.height || 0;
+            
+            const pos = latLonAltToVector3(lat, lon, alt);
+            posArray[i * 3] = pos.x;
+            posArray[i * 3 + 1] = pos.y;
+            posArray[i * 3 + 2] = pos.z;
+          }
+        }
+        
+        line.geometry.attributes.position.needsUpdate = true;
+      };
+      
+      return { line, updateTrail };
+    }
+    
+    let simulationTime = new Date();
+    let TIME_SPEED = 60;
+    
+    function updateSatellites() {
+      if (!isPaused) {
+        simulationTime = new Date(simulationTime.getTime() + (1000 * TIME_SPEED));
+      }
+      
+      const gmst = satellite.gstime(simulationTime);
+      
+      let leoCount = 0, meoCount = 0, geoCount = 0;
+      
+      satellites.forEach(sat => {
+        const positionAndVelocity = satellite.propagate(sat.satrec, simulationTime);
+        
+        if (positionAndVelocity.position && !positionAndVelocity.position.error) {
+          const geodeticCoords = satellite.eciToGeodetic(positionAndVelocity.position, gmst);
+          
+          const lat = satellite.degreesLat(geodeticCoords.latitude);
+          const lon = satellite.degreesLong(geodeticCoords.longitude);
+          const alt = geodeticCoords.height || 0;
+          
+          sat.altitude = alt;
+          const pos = latLonAltToVector3(lat, lon, alt);
+          sat.mesh.position.copy(pos);
+          
+          if (sat.orbit_type === 'LEO') leoCount++;
+          else if (sat.orbit_type === 'MEO') meoCount++;
+          else if (sat.orbit_type === 'GEO') geoCount++;
+        }
+      });
+      
+      document.getElementById('leo').textContent = leoCount;
+      document.getElementById('meo').textContent = meoCount;
+      document.getElementById('geo').textContent = geoCount;
+      
+      const hours = String(simulationTime.getUTCHours()).padStart(2, '0');
+      const minutes = String(simulationTime.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(simulationTime.getUTCSeconds()).padStart(2, '0');
+      document.getElementById('time').textContent = `${hours}:${minutes}:${seconds} UTC`;
+    }
+    
+    async function loadSatellites() {
+      try {
+        const response = await fetch('/api/satellites');
+        const data = await response.json();
+        
+        data.satellites.forEach(satData => {
+          const sat = createSatellite(satData);
+          satellites.push(sat);
+          
+          // Create orbit trail for EVERY satellite
+          const trailObj = createOrbitTrail(sat.satrec, sat.color);
+          orbitTrails.push(trailObj);
+        });
+        
+        document.getElementById('total').textContent = satellites.length;
+        document.getElementById('loading').style.display = 'none';
+        
+      } catch (error) {
+        console.error('Error loading satellites:', error);
+        document.getElementById('loading').innerHTML = '<p>Error loading data. Using demo mode...</p>';
+      }
+    }
+    
+    document.getElementById('toggleOrbits').addEventListener('click', () => {
+      showOrbits = !showOrbits;
+      orbitTrails.forEach(trailObj => trailObj.line.visible = showOrbits);
+      document.getElementById('toggleOrbits').textContent = showOrbits ? 'Hide Orbit Trails' : 'Show Orbit Trails';
+    });
+    
+    document.getElementById('speedSlider').addEventListener('input', (e) => {
+      TIME_SPEED = parseInt(e.target.value);
+      document.getElementById('speedValue').textContent = TIME_SPEED + 'x';
+    });
+    
+    document.getElementById('pauseBtn').addEventListener('click', () => {
+      isPaused = !isPaused;
+      const btn = document.getElementById('pauseBtn');
+      if (isPaused) {
+        btn.textContent = 'Resume';
+        btn.classList.add('paused');
+      } else {
+        btn.textContent = 'Pause';
+        btn.classList.remove('paused');
+      }
+    });
+    
+    let frameCount = 0;
+    
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      updateSatellites();
+      
+      if (showOrbits && frameCount % 5 === 0 && !isPaused) {
+        orbitTrails.forEach(trailObj => {
+          trailObj.updateTrail(simulationTime);
+        });
+      }
+      
+      frameCount++;
+      renderer.render(scene, camera);
+    }
+    
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+    
+    loadSatellites();
+    animate();
+  </script>
+</body>
+</html>
